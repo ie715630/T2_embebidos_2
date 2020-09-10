@@ -59,13 +59,22 @@ typedef enum
 	stateReady,
 	stateRunning,
 	stateWaiting
-} rtosTaskState_t;i
+} rtosTaskState_t;
 
 typedef enum
 {
 	from_execution,
 	from_isr
 } rtosContextSwitchFrom_t;
+
+typedef enum
+{
+	PRIORITY_0 = 0,
+	PRIORITY_1 = 1,
+	PRIORITY_2 = 2,
+	PRIORITY_3 = 3,
+	PRIORITY_4 = 4
+} priorities_t;
 
 typedef struct
 {
@@ -74,6 +83,7 @@ typedef struct
 	uint32_t stack[RTOS_STACK_SIZE];
 	uint64_t local_tick;
 	rtosTaskState_t state;
+	priorities_t priority;
 } task_t;
 
 struct
@@ -92,7 +102,7 @@ void task1(void);
 
 void task2(void);
 
-void taskIdel(void);
+void taskIdle(void);
 
 void rtosStart(void);
 
@@ -103,6 +113,8 @@ void rtosDelay(uint64_t ticks);
 void rtosActivateWaitingTask(void);
 
 void rtosKernel(rtosContextSwitchFrom_t from);
+
+uint8_t getNextTask();
 
 int main(void)
 {
@@ -131,44 +143,48 @@ int main(void)
 
 	task_list.tasks[0].task_body = task0;
 	task_list.tasks[0].sp = &(task_list.tasks[0].stack[RTOS_STACK_SIZE - 1])
-    		- STACK_FRAME_SIZE;
+    				- STACK_FRAME_SIZE;
 	task_list.tasks[0].stack[RTOS_STACK_SIZE - STACK_PC_OFFSET] =
 			(uint32_t) task0;
 	task_list.tasks[0].stack[RTOS_STACK_SIZE - STACK_PSR_OFFSET] =
 			(STACK_PSR_DEFAULT);
 	task_list.tasks[0].state = stateReady;
 	task_list.nTask++;
+	task_list.tasks[0].priority = PRIORITY_0;
 
 	task_list.tasks[1].task_body = task1;
 	task_list.tasks[1].sp = &(task_list.tasks[1].stack[RTOS_STACK_SIZE - 1])
-    		- STACK_FRAME_SIZE;
+    				- STACK_FRAME_SIZE;
 	task_list.tasks[1].stack[RTOS_STACK_SIZE - STACK_PC_OFFSET] =
 			(uint32_t) task1;
 	task_list.tasks[1].stack[RTOS_STACK_SIZE - STACK_PSR_OFFSET] =
 			(STACK_PSR_DEFAULT);
 	task_list.tasks[1].state = stateReady;
 	task_list.nTask++;
+	task_list.tasks[1].priority = PRIORITY_2;
 
 	task_list.tasks[2].task_body = task2;
 	task_list.tasks[2].sp = &(task_list.tasks[2].stack[RTOS_STACK_SIZE - 1])
-    		- STACK_FRAME_SIZE;
+    				- STACK_FRAME_SIZE;
 	task_list.tasks[2].stack[RTOS_STACK_SIZE - STACK_PC_OFFSET] =
 			(uint32_t) task2;
 	task_list.tasks[2].stack[RTOS_STACK_SIZE - STACK_PSR_OFFSET] =
 			(STACK_PSR_DEFAULT);
 	task_list.tasks[2].state = stateReady;
 	task_list.nTask++;
+	task_list.tasks[2].priority = PRIORITY_1;
 
 	/* idle task*/
-	task_list.tasks[task_list.nTask].task_body = taskIdel;
+	task_list.tasks[task_list.nTask].task_body = taskIdle;
 	task_list.tasks[task_list.nTask].sp =
 			&(task_list.tasks[task_list.nTask].stack[RTOS_STACK_SIZE - 1])
 			- STACK_FRAME_SIZE;
 	task_list.tasks[task_list.nTask].stack[RTOS_STACK_SIZE - STACK_PC_OFFSET] =
-			(uint32_t) taskIdel;
+			(uint32_t) taskIdle;
 	task_list.tasks[task_list.nTask].stack[RTOS_STACK_SIZE - STACK_PSR_OFFSET] =
 			(STACK_PSR_DEFAULT);
 	task_list.tasks[task_list.nTask].state = stateReady;
+	task_list.tasks[task_list.nTask].priority = PRIORITY_4;
 
 	NVIC_SetPriority(PendSV_IRQn, 0xFF);
 
@@ -207,6 +223,8 @@ void task1(void) // LED Green
 		GPIO_PortSet(BOARD_LED_BLUE_GPIO, 1u << BOARD_LED_BLUE_GPIO_PIN);
 
 		PRINTF("Task_1\n\r");
+
+		rtosDelay(30);
 	}
 }
 
@@ -219,10 +237,12 @@ void task2(void) // LED Blue
 		GPIO_PortSet(BOARD_LED_GREEN_GPIO, 1u << BOARD_LED_GREEN_GPIO_PIN);
 
 		PRINTF("Task_2\n\r");
+
+		rtosDelay(20);
 	}
 }
 
-void taskIdel(void)
+void taskIdle(void)
 {
 	for (;;)
 		;
@@ -273,8 +293,6 @@ void rtosActivateWaitingTask(void)
 void rtosKernel(rtosContextSwitchFrom_t from)
 {
 	uint8_t nextTask = task_list.nTask;
-	uint8_t findNextTask = task_list.current_task + 1;
-	uint8_t foundNextTask = 0;
 
 	static uint8_t first = 1;
 	register uint32_t r0 asm("r0");
@@ -282,31 +300,7 @@ void rtosKernel(rtosContextSwitchFrom_t from)
 	(void) r0;
 
 	/* calendarizador */
-	do
-	{
-		if (findNextTask < task_list.nTask)
-		{
-			if (stateReady == task_list.tasks[findNextTask].state
-					|| stateRunning == task_list.tasks[findNextTask].state)
-			{
-				nextTask = findNextTask;
-
-				foundNextTask = 1;
-			}
-			else if (findNextTask == task_list.current_task)
-			{
-				foundNextTask = 1;
-			}
-			else
-			{
-				findNextTask++;
-			}
-		}
-		else
-		{
-			findNextTask = 0;
-		}
-	} while (!foundNextTask);
+	nextTask = getNextTask();
 
 	task_list.next_task = nextTask;
 
@@ -358,3 +352,12 @@ void PendSV_Handler(void) // Context switching code
 	r0 = (int32_t) task_list.tasks[task_list.current_task].sp;
 	asm("mov r7,r0");
 }
+
+// TODO(Sergio): Implement function
+// Returns the task with the highest priority using the Rate Monotonic algorithm
+uint8_t getNextTask()
+{
+	return 0;
+}
+
+
