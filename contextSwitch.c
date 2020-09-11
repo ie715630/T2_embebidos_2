@@ -56,6 +56,12 @@
 
 typedef enum
 {
+  FALSE,
+  TRUE
+} boolean_t;
+
+typedef enum
+{
 	stateReady,
 	stateRunning,
 	stateWaiting
