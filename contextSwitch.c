@@ -365,7 +365,7 @@ uint8_t getNextTask()
   uint8_t findNextTask = 0;
   uint8_t foundNextTask = 0;
   uint8_t nextTask = task_list.nTask;
-  priority_t current_priority = PRIORITY_0;
+  priorities_t current_priority = PRIORITY_0;
 
   while(foundNextTask == FALSE)
   {
