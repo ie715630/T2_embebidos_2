@@ -353,11 +353,41 @@ void PendSV_Handler(void) // Context switching code
 	asm("mov r7,r0");
 }
 
-// TODO(Sergio): Implement function
 // Returns the task with the highest priority using the Rate Monotonic algorithm
 uint8_t getNextTask()
 {
-	return 0;
-}
+  uint8_t findNextTask = 0;
+  uint8_t foundNextTask = 0;
+  uint8_t nextTask = task_list.nTask;
+  priority_t current_priority = PRIORITY_0;
 
+  while(foundNextTask == FALSE)
+  {
+    if(findNextTask > task_list.nTask)
+    {
+      findNextTask = 0;
+      current_priority++;
+    }
+    if(current_priority > task_list.tasks[task_list.nTask].priority)
+    {
+      current_priority = PRIORITY_0;
+    }
+    if(current_priority == task_list.tasks[findNextTask].priority)
+    {
+      if(stateReady == task_list.tasks[findNextTask].state ||
+      stateRunning == task_list.tasks[findNextTask].state)
+      {
+        nextTask = findNextTask;
+        foundNextTask = TRUE;
+      }
+      else if(findNextTask == task_list.current_task)
+      {
+        foundNextTask = TRUE;
+      }
+    }
+    findNextTask++;
+  }
+
+  return nextTask;
+}
 
